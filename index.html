@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dhaka AQI Tracker — Live Air Quality</title>
+<meta name="description" content="Live US AQI, PM2.5 and PM10 for Dhaka areas, powered by the Open-Meteo Air Quality API (CAMS).">
+<style>
+  :root{
+    --ink:#14201a;
+    --muted:#5a6b62;
+    --card:rgba(255,255,255,.82);
+    --card-border:rgba(255,255,255,.65);
+    --shadow:0 18px 45px rgba(20,40,30,.14);
+    --radius:22px;
+    --accent:#00a651;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{max-width:100%;overflow-x:hidden}
+  body{
+    font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink);
+    min-height:100vh;
+    background:linear-gradient(160deg,#e8f6ec 0%,#d7ecd9 42%,#f4f8f2 100%);
+    transition:background 1s ease;
+    padding:22px 16px 30px;
+  }
+  /* Category-tinted backgrounds (set via body[data-category]) */
+  body[data-category="Good"]{background:linear-gradient(160deg,#dff5e3 0%,#bfe8c8 45%,#eef8ef 100%)}
+  body[data-category="Moderate"]{background:linear-gradient(160deg,#fdf6cf 0%,#f7e99a 45%,#fbf8e6 100%)}
+  body[data-category="Unhealthy for Sensitive Groups"]{background:linear-gradient(160deg,#ffe8d2 0%,#ffd0a3 45%,#fff3e6 100%)}
+  body[data-category="Unhealthy"]{background:linear-gradient(160deg,#ffe0e0 0%,#ffb8b8 45%,#ffeded 100%)}
+  body[data-category="Very Unhealthy"]{background:linear-gradient(160deg,#ecdff2 0%,#cfa8dd 45%,#f6eef9 100%)}
+  body[data-category="Hazardous"]{background:linear-gradient(160deg,#e8d5d9 0%,#c99aa5 45%,#f3e6e9 100%)}
+
+  .wrap{max-width:880px;margin:0 auto;width:100%}
+  header.top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+  .brand h1{font-size:clamp(26px,5vw,40px);letter-spacing:-.03em;line-height:1.02;font-weight:900}
+  .brand h1 span{display:block;font-size:13px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:7px}
+  .brand p{color:var(--muted);font-size:14px;margin-top:8px;max-width:460px;line-height:1.5}
+  .meta{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+  #lastUpdated{font-size:12.5px;color:var(--muted);background:rgba(255,255,255,.6);border:1px solid var(--card-border);padding:7px 11px;border-radius:999px;white-space:nowrap}
+  #refreshBtn{
+    appearance:none;border:0;cursor:pointer;background:#14201a;color:#fff;font-weight:700;font-size:14px;
+    padding:11px 18px;border-radius:999px;box-shadow:0 10px 24px rgba(20,32,26,.22)
+  }
+  #refreshBtn:active{transform:scale(.97)}
+  #refreshBtn:disabled{opacity:.55;cursor:wait}
+
+  .areas{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 16px}
+  .area-btn{
+    appearance:none;cursor:pointer;border:1px solid rgba(20,32,26,.14);background:rgba(255,255,255,.65);
+    color:var(--ink);font-weight:650;font-size:13.5px;padding:9px 14px;border-radius:999px;transition:all .18s ease
+  }
+  .area-btn:hover{background:#fff}
+  .area-btn.active{background:#14201a;color:#fff;border-color:#14201a}
+
+  .card{background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius);box-shadow:var(--shadow);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);padding:22px;margin-bottom:16px}
+  .hero{display:grid;grid-template-columns:250px 1fr;gap:24px;align-items:center}
+  @media(max-width:640px){.hero{grid-template-columns:1fr;justify-items:center;text-align:center}.meta{align-items:flex-start}}
+  .gauge-wrap{position:relative;width:230px;height:230px;flex:none}
+  .gauge-wrap svg{width:230px;height:230px;transform:rotate(-90deg);display:block}
+  .gauge-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px}
+  #currentAqi{font-size:64px;font-weight:900;letter-spacing:-.04em;line-height:1}
+  .gauge-center small{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);font-weight:800;margin-top:4px}
+  #categoryName{font-size:clamp(22px,4vw,30px);font-weight:850;letter-spacing:-.02em;line-height:1.15}
+  #adviceText{color:#33443a;font-size:15.5px;line-height:1.6;margin-top:10px}
+  .area-name{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:800;margin-bottom:8px}
+  .chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+  @media(max-width:640px){.chips{justify-content:center}}
+  .chip{background:#fff;border:1px solid rgba(20,32,26,.08);border-radius:16px;padding:12px 16px;min-width:132px}
+  .chip b{display:block;font-size:22px;letter-spacing:-.02em}
+  .chip span{font-size:11.5px;color:var(--muted);font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+  .chip b small{font-size:12px;color:var(--muted);font-weight:600}
+
+  h2.section{font-size:16px;font-weight:850;letter-spacing:-.01em;margin-bottom:4px}
+  .sub{font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.5}
+  #hourlyChart{width:100%;height:auto;display:block}
+  .chart-empty{color:var(--muted);font-size:14px;padding:18px 0;text-align:center}
+
+  #weekStrip{display:grid;grid-template-columns:repeat(7,1fr);gap:9px}
+  @media(max-width:640px){#weekStrip{grid-template-columns:repeat(4,1fr)}}
+  @media(max-width:380px){#weekStrip{grid-template-columns:repeat(3,1fr)}}
+  .day-box{border-radius:16px;padding:12px 8px;text-align:center;color:#14201a;border:1px solid rgba(20,32,26,.08);min-width:0}
+  .day-box .d-date{font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .day-box .d-aqi{font-size:24px;font-weight:900;line-height:1.15;margin:3px 0 1px}
+  .day-box .d-cat{font-size:10.5px;font-weight:700;line-height:1.3;opacity:.85}
+
+  .note{font-size:12.5px;color:var(--muted);line-height:1.55;background:rgba(255,255,255,.5);border-radius:14px;padding:12px 14px}
+  #loadingIndicator{display:none;align-items:center;gap:10px;font-weight:700;font-size:14px;color:#33443a;background:rgba(255,255,255,.7);border-radius:999px;padding:10px 16px;margin-bottom:16px;width:fit-content}
+  #loadingIndicator.show{display:flex}
+  .spinner{width:16px;height:16px;border-radius:50%;border:3px solid rgba(20,32,26,.15);border-top-color:#14201a;animation:spin .8s linear infinite;flex:none}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #errorCard{display:none;background:#fff1f1;border:1px solid #f3b8b8;color:#7a1414;border-radius:var(--radius);padding:22px;margin-bottom:16px;box-shadow:var(--shadow)}
+  #errorCard.show{display:block}
+  #errorCard h2{font-size:18px;margin-bottom:6px}
+  #errorCard p{font-size:14.5px;line-height:1.55}
+  footer{text-align:center;color:var(--muted);font-size:13px;padding:10px 0 2px;line-height:1.7}
+  footer strong{color:var(--ink)}
+</style>
+</head>
+<body data-category="">
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">
+      <h1><span>Live Air Quality</span>Dhaka AQI Tracker</h1>
+      <p>US Air Quality Index, PM2.5 and PM10 for neighbourhoods across Dhaka — updated hourly from satellite-model data.</p>
+    </div>
+    <div class="meta">
+      <div id="lastUpdated">Last updated —</div>
+      <button id="refreshBtn" type="button">Refresh</button>
+    </div>
+  </header>
+
+  <div class="areas" id="areaButtons" role="group" aria-label="Choose an area"></div>
+
+  <div id="loadingIndicator" role="status"><span class="spinner"></span> Loading air quality data…</div>
+
+  <div id="errorCard" role="alert">
+    <h2>Something went wrong</h2>
+    <p>Couldn't load air quality data — check your connection and tap Refresh</p>
+  </div>
+
+  <section class="card hero" id="heroCard" aria-label="Current air quality">
+    <div class="gauge-wrap" aria-hidden="false">
+      <svg viewBox="0 0 200 200" role="img" aria-label="AQI gauge">
+        <circle cx="100" cy="100" r="84" fill="none" stroke="rgba(20,32,26,.10)" stroke-width="16"></circle>
+        <circle id="gaugeRing" cx="100" cy="100" r="84" fill="none" stroke="#cccccc" stroke-width="16"
+          stroke-linecap="round" stroke-dasharray="527.79" stroke-dashoffset="527.79" style="transition:stroke-dashoffset .8s ease, stroke .8s ease"></circle>
+      </svg>
+      <div class="gauge-center">
+        <div id="currentAqi">—</div>
+        <small>US AQI</small>
+      </div>
+    </div>
+    <div>
+      <div class="area-name" id="currentAreaName">Dhaka</div>
+      <div id="categoryName">Loading…</div>
+      <p id="adviceText">Fetching the latest air quality reading for this area.</p>
+      <div class="chips">
+        <div class="chip"><span>PM2.5</span><b><span id="pm25Value">—</span> <small>µg/m³</small></b></div>
+        <div class="chip"><span>PM10</span><b><span id="pm10Value">—</span> <small>µg/m³</small></b></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" aria-label="Today hourly AQI">
+    <h2 class="section">Today, hour by hour</h2>
+    <p class="sub">US AQI from midnight until the latest available hour. Bars are coloured by category.</p>
+    <div id="chartWrap"><div class="chart-empty" id="chartEmpty">No chart data yet.</div></div>
+  </section>
+
+  <section class="card" aria-label="Last 7 days">
+    <h2 class="section">Last 7 days</h2>
+    <p class="sub">The worst (maximum) US AQI recorded on each of the past 7 days.</p>
+    <div id="weekStrip"></div>
+  </section>
+
+  <p class="note">Values are approximate for each area — from the CAMS model grid (~10 km), not street-level sensors. Source: Open-Meteo Air Quality API (CAMS — Copernicus Atmosphere Monitoring Service).</p>
+
+  <footer>
+    <div><strong>Built by Nafiz Bin Azad</strong></div>
+    <div>Dhaka AQI Tracker · Data: Open-Meteo / CAMS</div>
+  </footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var AREAS = [
+    { name: "Dhaka",     lat: 23.8103, lon: 90.4125 },
+    { name: "Uttara",    lat: 23.8759, lon: 90.3795 },
+    { name: "Mirpur",    lat: 23.8223, lon: 90.3654 },
+    { name: "Gulshan",   lat: 23.7808, lon: 90.4177 },
+    { name: "Motijheel", lat: 23.7339, lon: 90.4172 },
+    { name: "Old Dhaka", lat: 23.7104, lon: 90.4074 },
+    { name: "Savar",     lat: 23.8583, lon: 90.2667 }
+  ];
+
+  var CATEGORIES = [
+    { max: 50,       name: "Good",                              color: "#00E400", textColor: "#007a08",
+      advice: "Air is clean — great day to be outside." },
+    { max: 100,      name: "Moderate",                          color: "#FFFF00", textColor: "#8a7d00",
+      advice: "Acceptable — unusually sensitive people should watch symptoms." },
+    { max: 150,      name: "Unhealthy for Sensitive Groups",    color: "#FF7E00", textColor: "#b35600",
+      advice: "Sensitive groups (kids, elderly, asthma) should reduce long outdoor exertion." },
+    { max: 200,      name: "Unhealthy",                         color: "#FF0000", textColor: "#c40000",
+      advice: "Everyone may feel effects — wear a mask outdoors, keep windows closed." },
+    { max: 300,      name: "Very Unhealthy",                    color: "#8F3F97", textColor: "#8F3F97",
+      advice: "Health alert — avoid outdoor activity, wear a mask if you must go out." },
+    { max: Infinity, name: "Hazardous",                         color: "#7E0023", textColor: "#7E0023",
+      advice: "Emergency conditions — stay indoors, run a purifier if you have one." }
+  ];
+
+  function getCategory(aqi){
+    if (aqi === null || aqi === undefined || isNaN(aqi)) return null;
+    for (var i = 0; i < CATEGORIES.length; i++){
+      if (aqi <= CATEGORIES[i].max) return CATEGORIES[i];
+    }
+    return CATEGORIES[CATEGORIES.length - 1];
+  }
+  // Exposed for testing / reuse
+  window.getCategory = getCategory;
+  window.categoryForAqi = getCategory;
+  window.AQI_CATEGORIES = CATEGORIES;
+  window.AQI_AREAS = AREAS;
+
+  var state = { area: AREAS[0] };
+
+  var els = {
+    areaButtons: document.getElementById("areaButtons"),
+    lastUpdated: document.getElementById("lastUpdated"),
+    refreshBtn: document.getElementById("refreshBtn"),
+    loading: document.getElementById("loadingIndicator"),
+    errorCard: document.getElementById("errorCard"),
+    currentAqi: document.getElementById("currentAqi"),
+    categoryName: document.getElementById("categoryName"),
+    adviceText: document.getElementById("adviceText"),
+    pm25: document.getElementById("pm25Value"),
+    pm10: document.getElementById("pm10Value"),
+    gaugeRing: document.getElementById("gaugeRing"),
+    areaName: document.getElementById("currentAreaName"),
+    chartWrap: document.getElementById("chartWrap"),
+    weekStrip: document.getElementById("weekStrip")
+  };
+
+  var CIRC = 2 * Math.PI * 84; // 527.79
+
+  // ---- Area buttons ----
+  AREAS.forEach(function(area){
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "area-btn" + (area === state.area ? " active" : "");
+    btn.textContent = area.name;
+    btn.setAttribute("data-area", area.name);
+    btn.setAttribute("data-lat", String(area.lat));
+    btn.setAttribute("data-lon", String(area.lon));
+    btn.addEventListener("click", function(){
+      if (state.area === area) return;
+      state.area = area;
+      var all = els.areaButtons.querySelectorAll(".area-btn");
+      for (var i = 0; i < all.length; i++) all[i].classList.toggle("active", all[i].getAttribute("data-area") === area.name);
+      load();
+    });
+    els.areaButtons.appendChild(btn);
+  });
+
+  els.refreshBtn.addEventListener("click", function(){ load(); });
+
+  function setLoading(on){
+    els.loading.classList.toggle("show", !!on);
+    els.refreshBtn.disabled = !!on;
+  }
+  function showError(){
+    els.errorCard.classList.add("show");
+    // Clear any stale numbers — never leave fake data on screen
+    els.currentAqi.textContent = "—";
+    els.categoryName.textContent = "No data available";
+    els.adviceText.textContent = "We could not load a reading for this area right now.";
+    els.pm25.textContent = "—";
+    els.pm10.textContent = "—";
+    els.gaugeRing.style.stroke = "#cccccc";
+    els.gaugeRing.style.strokeDashoffset = String(CIRC);
+    els.chartWrap.innerHTML = '<div class="chart-empty">No chart data available.</div>';
+    els.weekStrip.innerHTML = "";
+    document.body.removeAttribute("data-category");
+  }
+  function hideError(){ els.errorCard.classList.remove("show"); }
+
+  function fmtNum(v, digits){
+    if (v === null || v === undefined || isNaN(v)) return "—";
+    return String(Math.round(v * 10) / 10 % 1 === 0 ? Math.round(v) : (Math.round(v * 10) / 10));
+  }
+
+  function render(data){
+    var hourly = data && data.hourly;
+    if (!hourly || !Array.isArray(hourly.time) || !Array.isArray(hourly.us_aqi)) {
+      throw new Error("Missing hourly data");
+    }
+    var times = hourly.time, aqiArr = hourly.us_aqi;
+    var pm25Arr = Array.isArray(hourly.pm2_5) ? hourly.pm2_5 : [];
+    var pm10Arr = Array.isArray(hourly.pm10) ? hourly.pm10 : [];
+
+    var now = new Date();
+    var currentIdx = -1;
+    for (var i = 0; i < times.length; i++){
+      var t = new Date(times[i]);
+      if (aqiArr[i] !== null && aqiArr[i] !== undefined && !isNaN(aqiArr[i]) && !isNaN(t.getTime()) && t <= now){
+        currentIdx = i;
+      }
+    }
+    if (currentIdx < 0) throw new Error("No current AQI reading");
+
+    var aqi = Math.round(aqiArr[currentIdx]);
+    var cat = getCategory(aqi);
+    if (!cat) throw new Error("Could not categorise AQI");
+
+    // Hero / gauge
+    els.areaName.textContent = state.area.name;
+    els.currentAqi.textContent = String(aqi);
+    els.categoryName.textContent = cat.name;
+    els.categoryName.style.color = cat.textColor;
+    els.adviceText.textContent = cat.advice;
+    els.pm25.textContent = fmtNum(pm25Arr[currentIdx]);
+    els.pm10.textContent = fmtNum(pm10Arr[currentIdx]);
+
+    var frac = Math.min(aqi, 300) / 300;
+    els.gaugeRing.style.stroke = cat.color;
+    els.gaugeRing.style.strokeDasharray = String(CIRC);
+    els.gaugeRing.style.strokeDashoffset = String(CIRC * (1 - frac));
+
+    document.body.setAttribute("data-category", cat.name);
+
+    var updated = new Date();
+    els.lastUpdated.textContent = "Last updated " + updated.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"}) + " · " + state.area.name + " reading " + String(times[currentIdx]).slice(11,16);
+
+    renderChart(times, aqiArr, currentIdx);
+    renderWeek(times, aqiArr, String(times[currentIdx]).slice(0,10));
+  }
+
+  function renderChart(times, aqiArr, currentIdx){
+    var currentDate = String(times[currentIdx]).slice(0,10);
+    var points = [];
+    for (var i = 0; i <= currentIdx && i < times.length; i++){
+      if (String(times[i]).slice(0,10) !== currentDate) continue;
+      if (aqiArr[i] === null || aqiArr[i] === undefined) continue;
+      points.push({ hour: String(times[i]).slice(11,13), time: times[i], aqi: Math.round(aqiArr[i]) });
+    }
+    if (!points.length){ els.chartWrap.innerHTML = '<div class="chart-empty">No chart data for today yet.</div>'; return; }
+
+    var W = 720, H = 190, padB = 22, padT = 12, maxV = Math.max(100, Math.max.apply(null, points.map(function(p){return p.aqi;})));
+    maxV = Math.ceil(maxV / 50) * 50;
+    var slot = W / Math.max(points.length, 1);
+    var barW = Math.max(6, Math.min(22, slot * 0.62));
+    var bars = "";
+    points.forEach(function(p, idx){
+      var h = Math.max(3, (p.aqi / maxV) * (H - padB - padT));
+      var x = idx * slot + (slot - barW) / 2;
+      var y = H - padB - h;
+      var c = getCategory(p.aqi);
+      bars += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="4" fill="' + (c ? c.color : "#ccc") + '" stroke="rgba(20,32,26,.18)"><title>' + p.hour + ':00 — AQI ' + p.aqi + '</title></rect>';
+      if (idx % 3 === 0 || idx === points.length - 1){
+        bars += '<text x="' + (idx * slot + slot/2).toFixed(1) + '" y="' + (H - 6) + '" font-size="10" fill="#5a6b62" text-anchor="middle">' + p.hour + ':00</text>';
+      }
+      bars += '<text x="' + (idx * slot + slot/2).toFixed(1) + '" y="' + (y - 4).toFixed(1) + '" font-size="9.5" font-weight="700" fill="#33443a" text-anchor="middle">' + p.aqi + '</text>';
+    });
+    els.chartWrap.innerHTML = '<svg id="hourlyChart" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" style="width:100%;height:190px;display:block" role="img" aria-label="Hourly AQI chart for today">' + bars + '</svg>';
+  }
+
+  function renderWeek(times, aqiArr, currentDateStr){
+    var byDate = {};
+    var order = [];
+    for (var i = 0; i < times.length; i++){
+      var d = String(times[i]).slice(0,10);
+      if (!d || d >= currentDateStr) continue;
+      if (aqiArr[i] === null || aqiArr[i] === undefined || isNaN(aqiArr[i])) continue;
+      if (!(d in byDate)){ byDate[d] = aqiArr[i]; order.push(d); }
+      else if (aqiArr[i] > byDate[d]) byDate[d] = aqiArr[i];
+    }
+    order.sort();
+    var last7 = order.slice(-7);
+    els.weekStrip.innerHTML = "";
+    last7.forEach(function(d){
+      var maxAqi = Math.round(byDate[d]);
+      var cat = getCategory(maxAqi);
+      var box = document.createElement("div");
+      box.className = "day-box";
+      box.setAttribute("data-date", d);
+      box.setAttribute("data-max", String(maxAqi));
+      box.style.background = cat ? cat.color : "#eee";
+      // Yellow / light colours need dark text (already dark); keep readable
+      if (cat && cat.name === "Moderate") box.style.background = "#f7e94a";
+      if (cat && cat.name === "Good") box.style.background = "#8fe388";
+      var dateLabel = d;
+      try {
+        var parsed = new Date(d + "T12:00:00");
+        dateLabel = parsed.toLocaleDateString([], { month: "short", day: "numeric" });
+      } catch(e){}
+      box.innerHTML = '<div class="d-date">' + dateLabel + '</div><div class="d-aqi">' + maxAqi + '</div><div class="d-cat">' + (cat ? cat.name : "") + '</div>';
+      els.weekStrip.appendChild(box);
+    });
+  }
+
+  function load(){
+    setLoading(true);
+    hideError();
+    var area = state.area;
+    var url = "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=" + area.lat + "&longitude=" + area.lon + "&hourly=pm2_5,pm10,us_aqi&past_days=7&forecast_days=1&timezone=Asia%2FDhaka";
+    return fetch(url)
+      .then(function(res){
+        if (!res || !res.ok) throw new Error("Bad response");
+        return res.json();
+      })
+      .then(function(data){ render(data); })
+      .catch(function(err){
+        showError();
+      })
+      .finally(function(){ setLoading(false); });
+  }
+
+  window.loadAqi = load;
+  window.__aqiState = state;
+  load();
+})();
+</script>
+</body>
+</html>
